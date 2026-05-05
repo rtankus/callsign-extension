@@ -14,21 +14,41 @@ function looksLikeCallsign(cs) {
 /* ===============================
    Inject telephony line
 ================================= */
-function injectTelephony(callsignEl, telephonies) {
+function injectTelephony(callsignEl, telephonies, items = []) {
   removeInjection();
 
   if (!Array.isArray(telephonies) || !telephonies.length) return;
+
+  const fr24Telephonies = new Set(
+    items
+      .filter(it => it.type === "FR24" || it.type === "FR24_IATA")
+      .map(it => it.telephony)
+      .filter(Boolean)
+  );
 
   const container = document.createElement("div");
   container.id = "telephonyInjected";
   container.style.marginTop = "6px";
 
   for (const t of telephonies) {
+    const isFr24 = fr24Telephonies.has(t);
+
     const line = document.createElement("div");
-    line.style.fontSize = "16px";
+    line.style.fontSize = isFr24 ? "13px" : "16px";
     line.style.fontWeight = "700";
-    line.style.color = "#4da3ff";
-    line.textContent = t;
+    line.style.color = isFr24 ? "#9ca3af" : "#4da3ff";
+
+    if (isFr24) {
+      line.textContent = t;
+      const badge = document.createElement("span");
+      badge.textContent = " airline name";
+      badge.style.fontWeight = "400";
+      badge.style.fontSize = "11px";
+      badge.style.color = "#6b7280";
+      line.appendChild(badge);
+    } else {
+      line.textContent = t;
+    }
 
     container.appendChild(line);
   }
@@ -49,10 +69,11 @@ async function queryTelephonyExact(code, mode) {
     chrome.runtime.sendMessage(
       { type: mode, code },
       (res) => {
-        if (!res) return resolve([]);
-        if (res.telephonies) return resolve(res.telephonies);
-        if (res.telephony) return resolve([res.telephony]);
-        resolve([]);
+        if (!res) return resolve({ telephonies: [], items: [] });
+        resolve({
+          telephonies: res.telephonies || (res.telephony ? [res.telephony] : []),
+          items: res.items || []
+        });
       }
     );
   });
@@ -80,29 +101,30 @@ async function lookupAndInject() {
   removeInjection();
 
 let telephonies = [];
+let matchedItems = [];
 
 const ident = callsign.replace(/[0-9].*$/, "");
 
 // exact special identifiers first: BMBR, BDOG, POLR, NASA
-telephonies = await queryTelephonyExact(ident, "exactIdentifier");
+({ telephonies, items: matchedItems } = await queryTelephonyExact(ident, "exactIdentifier"));
 
 // ICAO fallback
 if (!telephonies.length) {
   const icaoCode = callsign.slice(0, 3);
-  telephonies = await queryTelephonyExact(icaoCode, "exact3ld");
+  ({ telephonies, items: matchedItems } = await queryTelephonyExact(icaoCode, "exact3ld"));
 }
 
 // IATA fallback
 if (!telephonies.length) {
   const iataCode = callsign.slice(0, 2);
-  telephonies = await queryTelephonyExact(iataCode, "exactIata");
+  ({ telephonies, items: matchedItems } = await queryTelephonyExact(iataCode, "exactIata"));
 }
 
 if (!telephonies.length) return;
 
 telephonies = [...new Set(telephonies)];
 
-injectTelephony(callsignEl, telephonies);
+injectTelephony(callsignEl, telephonies, matchedItems);
 }
 
 /* ===============================

@@ -206,45 +206,52 @@ function levenshtein(a, b) {
 
 function scoreCandidate(queryRaw, item) {
   const q = cleanText(queryRaw);
+  const qNoSpace = q.replaceAll(" ", "");
   const qKey = soundKey(q);
+  const qEsc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const wordRe = new RegExp(`(?:^|\\s)${qEsc}(?:\\s|$)`);
 
   const t = item.telephony || "";
   const c = item.company || "";
   const d = item.designator || "";
   const id = item.identifier || "";
+  const iata = item.iata || "";
 
+  let score = 0;
+
+  // Tier 1 — prefix: telephony starts with query
+  if (t.startsWith(q)) score = Math.max(score, 95);
+  else if (t.replaceAll(" ", "").startsWith(qNoSpace)) score = Math.max(score, 90);
+
+  // Tier 2 — exact word boundary in telephony, or prefix on company
+  if (wordRe.test(t)) score = Math.max(score, 85);
+  if (c.startsWith(q) || c.replaceAll(" ", "").startsWith(qNoSpace)) score = Math.max(score, 78);
+
+  // Tier 3 — contains match
+  if (t.replaceAll(" ", "").includes(qNoSpace)) score = Math.max(score, 72);
+  if (wordRe.test(c)) score = Math.max(score, 68);
+  if (c.replaceAll(" ", "").includes(qNoSpace)) score = Math.max(score, 62);
+
+  // Tier 4 — Levenshtein fuzzy (caps below tier 1 for >1-char differences)
   const levT = t ? levenshtein(q, t) : 99;
   const levC = c ? levenshtein(q, c) : 99;
   const levD = d ? levenshtein(q, d) : 99;
   const levI = id ? levenshtein(q, id) : 99;
-  const iata = item.iata || "";
-const levIata = iata ? levenshtein(q, iata) : 99;
+  const levIata = iata ? levenshtein(q, iata) : 99;
 
-  let score = 0;
   score = Math.max(score, 100 - Math.min(90, levT * 9));
   score = Math.max(score, 85 - Math.min(70, levC * 6));
   score = Math.max(score, 75 - Math.min(60, levD * 10));
   score = Math.max(score, 75 - Math.min(60, levI * 10));
-  
-score = Math.max(score, 75 - Math.min(60, levIata * 10));
+  score = Math.max(score, 75 - Math.min(60, levIata * 10));
+
+  // Phonetic boost (additive)
   const tKey = soundKey(t);
   const cKey = soundKey(c);
-
   if (qKey && tKey && qKey === tKey) score += 18;
   if (qKey && cKey && qKey === cKey) score += 10;
 
-  const qNoSpace = q.replaceAll(" ", "");
-  if (t.replaceAll(" ", "").includes(qNoSpace)) score += 18;
-  if (c.replaceAll(" ", "").includes(qNoSpace)) score += 8;
-
-  // ✅ NEW: strong boost for starts-with on short queries like "SKY"
-  if (q.length <= 4) {
-    if (t.replaceAll(" ", "").startsWith(qNoSpace)) score += 25;
-    if (c.replaceAll(" ", "").startsWith(qNoSpace)) score += 12;
-  }
-
-  if (score > 130) score = 130;
-  return score;
+  return Math.min(score, 130);
 }
 
 async function loadAircraftJsonOptimized() {
@@ -430,10 +437,17 @@ async function loadFr24Callsigns(existingItems = []) {
   const data = await res.json();
   const rows = Array.isArray(data) ? data : (data.all || []);
 
-  const existingCallsigns = new Set(
+  // FR24 telephonies are often airline marketing names rather than ATC callsigns.
+  // Only use FR24 for ICAOs/IATAs that have no entry at all from FAA or Wikipedia.
+  const existingDesignators = new Set(
     existingItems
-      .map(x => cleanText(x.telephony || x.callsign || ""))
-      .filter(Boolean)
+      .map(x => cleanText(x.designator || ""))
+      .filter(x => /^[A-Z0-9]{3}$/.test(x))
+  );
+  const existingIatas = new Set(
+    existingItems
+      .map(x => cleanText(x.iata || ""))
+      .filter(x => /^[A-Z0-9]{2}$/.test(x))
   );
 
   const out = [];
@@ -449,7 +463,8 @@ async function loadFr24Callsigns(existingItems = []) {
 
     if (!telephony) continue;
 
-if (existingCallsigns.has(telephony) && icao) continue;
+    if (icao && existingDesignators.has(icao)) continue;
+    if (iata && existingIatas.has(iata)) continue;
 
     if (/^[A-Z0-9]{3}$/.test(icao)) {
       out.push({
@@ -799,7 +814,7 @@ const matches = all
 
   sendResponse({
     ok: true,
-    telephonies: matches.map(m => m.telephony).filter(Boolean),
+    telephonies: [...new Set(matches.map(m => m.telephony).filter(Boolean))],
     items: matches
   });
 
@@ -858,10 +873,12 @@ if (msg?.type === "exact3ld") {
     String(it.designator || "").toUpperCase() === code
   );
 
+  const telephonies = [...new Set(matches.map(m => m.telephony).filter(Boolean))];
+
   sendResponse({
     ok: true,
-    telephony: matches[0]?.telephony || null,
-    telephonies: [...new Set(matches.map(m => m.telephony).filter(Boolean))],
+    telephony: telephonies[0] || null,
+    telephonies,
     items: matches
   });
 
@@ -1025,11 +1042,31 @@ if (msg?.type === "query") {
 
     const aircraftResults = [];
 
-    const items = dedupeResults([
-      ...exactItems,
+    const exactMatchRank = (it) => {
+      if (String(it.designator || "").toUpperCase() === qUpper) return 0;
+      if (String(it.iata || "").toUpperCase() === qUpper) return 1;
+      if (String(it.identifier || "").toUpperCase() === qUpper) return 2;
+      if (cleanText(it.telephony || "") === qUpper) return 3;
+      return 4;
+    };
+
+    const deduped = dedupeResults([
+      ...exactItems.sort((a, b) =>
+        exactMatchRank(a) - exactMatchRank(b) || statusRank(a.status) - statusRank(b.status)
+      ),
       ...scored,
       ...aircraftResults
-    ]).slice(0, 12);
+    ]);
+
+    // Collapse same-ICAO entries: keep the first (best-status) entry per designator
+    const seenDesignators = new Set();
+    const items = deduped.filter(it => {
+      const d = String(it.designator || "").toUpperCase();
+      if (!d) return true;
+      if (seenDesignators.has(d)) return false;
+      seenDesignators.add(d);
+      return true;
+    }).slice(0, 12);
 
     sendResponse({
       ok: true,

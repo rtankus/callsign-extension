@@ -190,8 +190,8 @@ el.insertAdjacentHTML("beforeend", `
       ${it.status ? `<span class="status-pill ${escapeHtml(it.status)}">${escapeHtml(it.status)}</span>` : ""}
     </div>
 
-    <div class="label">CALLSIGN</div>
-    <div class="callsign-main">${escapeHtml(it.telephony || "(no telephony)")}</div>
+    <div class="label">${it.type === "FR24" || it.type === "FR24_IATA" ? "AIRLINE NAME" : "CALLSIGN"}</div>
+    <div class="callsign-main${it.type === "FR24" || it.type === "FR24_IATA" ? " fr24-name" : ""}">${escapeHtml(it.telephony || "(no telephony)")}</div>
 
 <div class="meta-row">
   <span class="meta-item">${escapeHtml(it.company || "Unknown")}</span>
