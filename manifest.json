@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ATC Callsign Finder",
-  "version": "1.3",
+  "version": "1.4.2",
   "description": "Search FAA ICAO 3-letter designators and telephony with fuzzy matching.",
   
   "icons": {
