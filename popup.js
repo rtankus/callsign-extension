@@ -44,6 +44,16 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function sourceLabel(it) {
+  const s = String(it.source || "").toLowerCase();
+  const t = String(it.type || "").toLowerCase();
+  if (s.includes("faa") || t === "3ld" || t === "us") return "FAA 7340.2";
+  if (s.includes("wikipedia")) return "Wikipedia";
+  if (s.includes("flightradar") || t === "fr24" || t === "fr24_iata") return "FlightRadar24";
+  if (it.source) return it.source;
+  return null;
+}
+
 function isoToFlagEmoji(code) {
   if (!/^[A-Z]{2}$/.test(code)) return "";
   return [...code]
@@ -207,6 +217,7 @@ ${it.comments ? `
     </div>
   </div>
 ` : ""}
+${sourceLabel(it) ? `<div class="source-tag">${escapeHtml(sourceLabel(it))}</div>` : ""}
   </div>
 `);
   }

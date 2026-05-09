@@ -23,8 +23,7 @@
   },
 
   "permissions": [
-    "storage",
-    "tabs"
+    "storage"
   ],
 
   "host_permissions": [
@@ -53,7 +52,7 @@
     {
       "resources": [
   "aircraft.json",
-  "airline-callsigns.clean.json",
+  "callsigns.json",
   "fr24.json"
 ],
       

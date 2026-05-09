@@ -103,21 +103,26 @@ async function lookupAndInject() {
 let telephonies = [];
 let matchedItems = [];
 
+// Extract all letters before the first digit — the char after ident must be a number
 const ident = callsign.replace(/[0-9].*$/, "");
 
-// exact special identifiers first: BMBR, BDOG, POLR, NASA
-({ telephonies, items: matchedItems } = await queryTelephonyExact(ident, "exactIdentifier"));
-
-// ICAO fallback
-if (!telephonies.length) {
-  const icaoCode = callsign.slice(0, 3);
-  ({ telephonies, items: matchedItems } = await queryTelephonyExact(icaoCode, "exact3ld"));
+// Need at least 2 chars before the flight number
+if (ident.length < 2) {
+  removeInjection();
+  return;
 }
 
-// IATA fallback
-if (!telephonies.length) {
-  const iataCode = callsign.slice(0, 2);
-  ({ telephonies, items: matchedItems } = await queryTelephonyExact(iataCode, "exactIata"));
+// 1. Exact identifier match (FAA US Special, any prefix length)
+({ telephonies, items: matchedItems } = await queryTelephonyExact(ident, "exactIdentifier"));
+
+// 2. Exact ICAO match — only when ident is exactly 3 chars
+if (!telephonies.length && ident.length === 3) {
+  ({ telephonies, items: matchedItems } = await queryTelephonyExact(ident, "exact3ld"));
+}
+
+// 3. Exact IATA match — only when ident is exactly 2 chars
+if (!telephonies.length && ident.length === 2) {
+  ({ telephonies, items: matchedItems } = await queryTelephonyExact(ident, "exactIata"));
 }
 
 if (!telephonies.length) return;

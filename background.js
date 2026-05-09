@@ -13,7 +13,7 @@ const URL_USSPEC = "https://www.faa.gov/air_traffic/publications/atpubs/cnt_html
 const URL_NOTICES = "https://www.faa.gov/air_traffic/publications/at_notices/?documentID=1044118";
 
 const DB_NAME = "atc_callsigns_db";
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 const STORE = "entries";
 const META_KEY = "meta_lastUpdated";
 
@@ -360,8 +360,8 @@ async function loadAircraftJsonOptimized() {
 
 
 async function loadWikipediaCallsigns() {
-  const res = await fetch(chrome.runtime.getURL("airline-callsigns.clean.json"));
-  if (!res.ok) throw new Error("Failed to load airline-callsigns.clean.json");
+  const res = await fetch(chrome.runtime.getURL("callsigns.json"));
+  if (!res.ok) throw new Error("Failed to load callsigns.json");
 
   const data = await res.json();
   const rows = Array.isArray(data) ? data : (data.all || []);
@@ -708,7 +708,17 @@ const c = parseUSSpecialFromHtml(us, "FAA US Special");
 const d = parseNotices3LD(notices);
 const wiki = await loadWikipediaCallsigns();
 
-const base = dedupeByKey([...a, ...b, ...c, ...d, ...wiki]);
+// Any 3LD designator covered by FAA is authoritative — suppress all non-FAA
+// entries (Wikipedia IATA siblings, etc.) that share the same designator.
+const faaDesignators = new Set(
+  [...a, ...b, ...d]
+    .map(it => it.designator)
+    .filter(Boolean)
+);
+
+const base = dedupeByKey([...a, ...b, ...c, ...d, ...wiki].filter(it =>
+  it.type === "3LD" || it.type === "US" || !it.designator || !faaDesignators.has(it.designator)
+));
 
 // FR24 only fills callsigns that do NOT already exist
 const fr24 = await loadFr24Callsigns(base);
@@ -873,13 +883,15 @@ if (msg?.type === "exact3ld") {
     String(it.designator || "").toUpperCase() === code
   );
 
-  const telephonies = [...new Set(matches.map(m => m.telephony).filter(Boolean))];
+  const faaMatches = matches.filter(it => it.type === "3LD");
+  const effective = faaMatches.length ? faaMatches : matches;
+  const telephonies = [...new Set(effective.map(m => m.telephony).filter(Boolean))];
 
   sendResponse({
     ok: true,
     telephony: telephonies[0] || null,
     telephonies,
-    items: matches
+    items: effective
   });
 
   return;
