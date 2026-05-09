@@ -379,16 +379,17 @@ const comments = String(r.comments || "").trim();
 const identifier = cleanText(r.identifier || "");
 
 if (identifier && telephony && !icao) {
+  const isUS = country.toUpperCase().includes("UNITED STATES");
   out.push({
     key: `US:${identifier}`,
-    type: "US",
+    type: isUS ? "US" : "WIKI_IDENT",
     identifier,
     telephony,
     company,
     country,
     status,
     comments,
-    source: "Manual / US Special"
+    source: isUS ? "Manual / US Special" : "Wikipedia Airline Codes"
   });
 }
 

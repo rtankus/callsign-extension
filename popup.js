@@ -196,6 +196,7 @@ el.insertAdjacentHTML("beforeend", `
       <div class="code-group">
         ${it.designator ? `<span class="code-pill icao-pill">ICAO ${escapeHtml(it.designator)}</span>` : ""}
         ${it.iata ? `<span class="code-pill iata-pill">IATA ${escapeHtml(it.iata)}</span>` : ""}
+        ${it.identifier && !it.designator && !it.iata ? `<span class="code-pill ident-pill">IDENT ${escapeHtml(it.identifier)}</span>` : ""}
       </div>
       ${it.status ? `<span class="status-pill ${escapeHtml(it.status)}">${escapeHtml(it.status)}</span>` : ""}
     </div>
